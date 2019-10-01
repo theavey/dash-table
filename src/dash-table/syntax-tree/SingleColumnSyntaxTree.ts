@@ -1,12 +1,14 @@
+import * as R from 'ramda';
+
 import { RequiredPluck, OptionalPluck } from 'core/type';
 import SyntaxTree from 'core/syntax-tree';
 import { ILexemeResult, ILexerResult } from 'core/syntax-tree/lexer';
 import { LexemeType, boundLexeme } from 'core/syntax-tree/lexicon';
 
-import { ColumnType, IColumn } from 'dash-table/components/Table/props';
+import { ColumnType, IColumn, Case } from 'dash-table/components/Table/props';
 
 import { fieldExpression } from './lexeme/expression';
-import { equal, RelationalOperator, contains, dateStartsWith } from './lexeme/relational';
+import { equal, RelationalOperator, contains, dateStartsWith, CaseMapping } from './lexeme/relational';
 
 import columnLexicon from './lexicon/column';
 
@@ -45,9 +47,23 @@ function isUnary(lexemes: ILexemeResult[]) {
         lexemes[0].lexeme.type === LexemeType.UnaryOperator;
 }
 
-function modifyLex(config: SingleColumnConfig, res: ILexerResult) {
+function isRelational(lexemes: ILexemeResult[]) {
+    return lexemes.length === 2 &&
+        lexemes[0].lexeme.type === LexemeType.RelationalOperator;
+}
+
+function isDefaultCase(lexemes: ILexemeResult[]) {
+    return lexemes[0].lexeme.case === 'default';
+}
+
+function modifyLex(config: SingleColumnConfig, filter_case: Case, res: ILexerResult) {
     if (!res.valid) {
         return res;
+    }
+
+    if ((filter_case === 'insensitive' || config.filter_case_insensitive)
+        && isRelational(res.lexemes) && isDefaultCase(res.lexemes)) {
+        res.lexemes[0].lexeme = R.merge(res.lexemes[0].lexeme, CaseMapping.get(res.lexemes[0].lexeme.subType as RelationalOperator));
     }
 
     if (isBinary(res.lexemes) || isUnary(res.lexemes)) {
@@ -66,14 +82,17 @@ function modifyLex(config: SingleColumnConfig, res: ILexerResult) {
     return res;
 }
 
-export type SingleColumnConfig = RequiredPluck<IColumn, 'id'> & OptionalPluck<IColumn, 'type'>;
+export type SingleColumnConfig = RequiredPluck<IColumn, 'id'> &
+    OptionalPluck<IColumn, 'type'> &
+    OptionalPluck<IColumn, 'filter_case_sensitive'> &
+    OptionalPluck<IColumn, 'filter_case_insensitive'>;
 
 export default class SingleColumnSyntaxTree extends SyntaxTree {
-    constructor(query: string, config: SingleColumnConfig) {
+    constructor(query: string, config: SingleColumnConfig, filter_case: Case) {
         super(
             columnLexicon,
             query,
-            modifyLex.bind(undefined, config)
+            modifyLex.bind(undefined, config, filter_case)
         );
     }
 }
